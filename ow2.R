@@ -194,11 +194,12 @@ term2gene <- gga_kegg_local[, c("pathway", "gene")]
 term2name <- read.csv("../kegg/gga_kegg_term2name.csv", stringsAsFactors = FALSE)
 kegg_result_list <- list()
 
-
+all_DEGs <- c()
 for (cluster_id in names(cluster_DEG_list)) {
         deg <- cluster_DEG_list[[cluster_id]]
         # Filter out DEGs
         deg_filtered <- deg %>% filter(p_val_adj < 0.05 & abs(avg_log2FC) > 0.25)
+        all_DEGs <- c(all_DEGs, rownames(deg_filtered))
         # Transfer symbol -> ENTREZ ID
         gene_df <- bitr(rownames(deg_filtered), fromType = "SYMBOL", toType = "ENTREZID", OrgDb = org.Gg.eg.db)
         gene_df <- gene_df[!duplicated(gene_df$ENTREZID) & !is.na(gene_df$ENTREZID), ]
@@ -209,7 +210,6 @@ for (cluster_id in names(cluster_DEG_list)) {
                 cat("No valid ENTREZ IDs for cluster", cluster_id, "\n")
                 next
         }
-
         kegg <- enricher(gene = gene_df$ENTREZID, pAdjustMethod = "BH", pvalueCutoff = 0.05, qvalueCutoff = 0.2, TERM2GENE = term2gene, TERM2NAME = term2name)
 
         cat("KEGG nrow: cluster", cluster_id, "\n")
@@ -244,6 +244,50 @@ iga <- c('AICDA', 'BLA', 'BLB1', 'BLB2', 'BLB3', 'CCR10', 'CCR9', 'CD28', 'CD40'
 sal <- c('ABI1', 'ACBD3', 'ACTB', 'ACTG1', 'ACTG1L', 'ACTR10', 'ACTR10L', 'ACTR1A', 'ACTR2', 'ACTR3', 'ACTR3B', 'AHNAK', 'AHNAK2', 'AKT1', 'AKT3', 'ANXA2', 'ARF1', 'ARF6', 'ARHGEF26', 'ARL8A', 'ARL8B', 'ARL8BL', 'ARPC1A', 'ARPC1B', 'ARPC2', 'ARPC3', 'ARPC4', 'ARPC5', 'ARPC5L', 'BAK1', 'BCL2', 'BIRC2', 'BRK1', 'CASP1', 'CASP18', 'CASP3', 'CASP7', 'CASP8', 'CD14', 'CDC42', 'CHUK', 'CSE1L', 'CTNNB1', 'CYCS', 'CYFIP1', 'CYFIP2', 'CYTH1', 'CYTH3', 'CYTH4', 'DCTN1', 'DCTN2', 'DCTN3', 'DCTN4', 'DCTN5', 'DCTN6', 'DNM2L', 'DYL1', 'DYL2', 'DYNC1H1', 'DYNC1I1', 'DYNC1I2', 'DYNC1LI1', 'DYNC1LI2', 'DYNC1LI2L', 'DYNC2H1', 'DYNC2LI1', 'DYNLL1', 'DYNLL2', 'DYNLRB1', 'DYNLRB2', 'DYNLT1', 'DYNLT3', 'ELMO1', 'ELMO2', 'EXOC2', 'EXOC4', 'EXOC5', 'EXOC7', 'FADD', 'FBXO22', 'FHOD1', 'FLNA', 'FOS', 'FYCO1', 'GAPDH', 'GCC2', 'HRAS', 'HSP90AA1', 'HSP90AB1', 'HSP90B1', 'IKBKB', 'IL18', 'IL1B', 'IL6', 'IL8L1', 'IL8L2', 'IRAK4', 'JUN', 'KIF5B', 'KIF5C', 'KLC1', 'KLC2', 'KLC4', 'KPNA1', 'KPNA3', 'KPNA4', 'LEF1', 'LOC100857858', 'LOC100858984', 'LOC100859737', 'LOC101750560', 'LOC107050879', 'LOC107053365', 'LOC416695', 'LOC776720', 'LY96', 'M6PR', 'MAP2K1', 'MAP2K2', 'MAP2K3', 'MAP2K4', 'MAP2K6', 'MAP3K7', 'MAPK1', 'MAPK10', 'MAPK11', 'MAPK12', 'MAPK13', 'MAPK14', 'MAPK3', 'MAPK8', 'MAPK9', 'MLKL', 'MYC', 'MYD88', 'MYL10', 'MYL12A', 'MYL12B', 'MYL2', 'MYL9', 'MYLPF', 'MYO6', 'NCKAP1', 'NCKAP1L', 'NDAHNAKL', 'NFKB1', 'NFKBIA', 'NOD1', 'PAK1', 'PAK3', 'PFN1', 'PFN2', 'PFN3', 'PFN4', 'PIK3C2A', 'PIK3C2B', 'PIK3C2G', 'PIK3C3', 'PIK3CA', 'PIK3CB', 'PIK3CD', 'PIK3CG', 'PLEKHM1', 'PLEKHM2', 'PODXL', 'PTPRC', 'RAB5A', 'RAB5B', 'RAB5C', 'RAB7A', 'RAB7B', 'RAB9A', 'RAB9B', 'RAC1', 'RAF1', 'RALA', 'RELA', 'RHOA', 'RHOB', 'RHOG', 'RHOG2', 'RHOGL', 'RHOH', 'RHOJ', 'RILP', 'RIPK1', 'RIPK2', 'RIPK3', 'ROCK2', 'RPS3', 'S100A10', 'SKP1', 'SNX33', 'SNX9', 'TAB1', 'TAB2', 'TAB3', 'TCF7', 'TCF7L1', 'TCF7L2', 'TIRAP', 'TLR1A', 'TLR2', 'TLR2A', 'TLR2B', 'TLR4', 'TLR5', 'TNFRSF10B', 'TNFRSF1A', 'TNFSF10', 'TRADD', 'TRAF2', 'TRAF6', 'TUB4A', 'TUB5A', 'TUBA1A', 'TUBA1A1', 'TUBA1C', 'TUBA3E', 'TUBA4A', 'TUBA4AL', 'TUBA4B', 'TUBA8A', 'TUBA8B', 'TUBAL3', 'TUBB', 'TUBB1', 'TUBB2A', 'TUBB2B', 'TUBB3', 'TUBB4B', 'TUBB6', 'TXN', 'TXN2', 'VPS11', 'VPS16', 'VPS18', 'VPS33A', 'VPS39', 'VPS41', 'WASF3', 'WASF3L', 'WASL')
 ec <- c('ACTB', 'ACTG1', 'ACTG1L', 'ACTR2', 'ACTR3', 'ACTR3B', 'ARHGAP10', 'ARHGEF26', 'ARPC1A', 'ARPC1B', 'ARPC2', 'ARPC3', 'ARPC4', 'ARPC5', 'ARPC5L', 'BCAR1', 'CAV1', 'CAV2', 'CAV3', 'CBL', 'CD2AP', 'CDC42', 'CDH1', 'CLTA', 'CLTB', 'CLTC', 'CLTCL1', 'CRK', 'CRKL', 'CTNNA1', 'CTNNA2', 'CTNNA3', 'CTNNB1', 'CTTN', 'DNM1', 'DNM2L', 'DNM3', 'DOCK1', 'ELMO1', 'ELMO2', 'ELMO3', 'FN1', 'GAB1', 'HCLS1', 'ILK', 'ITGB1', 'MAD2L2', 'MET', 'PIK3CA', 'PIK3CB', 'PIK3CD', 'PIK3R1', 'PIK3R2', 'PIK3R3', 'PTK2', 'PXN', 'RAC1', 'RHOA', 'RHOG', 'RHOG2', 'RHOGL', 'SEPT11', 'SEPT12', 'SEPT2', 'SEPT2L', 'SEPT3', 'SEPT6', 'SEPT8', 'SEPT9', 'SEPTIN11', 'SEPTIN12', 'SEPTIN2', 'SEPTIN2L', 'SEPTIN3', 'SEPTIN6', 'SEPTIN8', 'SEPTIN9', 'SHC1', 'SHC2', 'SHC3', 'SHC4', 'SRC', 'VCL', 'WASF1', 'WASF2', 'WASL')
 
+all_DEGs <- unique(all_DEGs)
 
+if (!dir.exists(paste0(abbr,"_Dot"))) {
+  dir.create(paste0(abbr,"_Dot"))
+}
+
+markers.to.plot <- intersect(all_DEGs, toll)
+pdf(paste0(abbr,"_Dot/", abbr, '_Toll.pdf',sep=''), width = 12, height = 15)
+DotPlot(paired.combined, features = rev(markers.to.plot), cols = c("blue", "red"), dot.scale = 8, split.by = "group") + RotatedAxis()
+dev.off()
+
+markers.to.plot <- intersect(all_DEGs, nod)
+pdf(paste0(abbr,"_Dot/", abbr, '_NOD.pdf',sep=''), width = 12, height = 15)
+DotPlot(paired.combined, features = rev(markers.to.plot), cols = c("blue", "red"), dot.scale = 8, split.by = "group") + RotatedAxis()
+dev.off()
+
+markers.to.plot <- intersect(all_DEGs, rig)
+pdf(paste0(abbr,"_Dot/", abbr, '_RIG.pdf',sep=''), width = 12, height = 15)
+DotPlot(paired.combined, features = rev(markers.to.plot), cols = c("blue", "red"), dot.scale = 8, split.by = "group") + RotatedAxis()
+dev.off()
+
+markers.to.plot <- intersect(all_DEGs, cyto)
+pdf(paste0(abbr,"_Dot/", abbr, '_Cytosolic.pdf',sep=''), width = 12, height = 15)
+DotPlot(paired.combined, features = rev(markers.to.plot), cols = c("blue", "red"), dot.scale = 8, split.by = "group") + RotatedAxis()
+dev.off()
+
+markers.to.plot <- intersect(all_DEGs, lectin)
+pdf(paste0(abbr,"_Dot/", abbr, '_lectin.pdf',sep=''), width = 12, height = 15)
+DotPlot(paired.combined, features = rev(markers.to.plot), cols = c("blue", "red"), dot.scale = 8, split.by = "group") + RotatedAxis()
+dev.off()
+
+markers.to.plot <- intersect(all_DEGs, iga)
+pdf(paste0(abbr,"_Dot/", abbr, '_IGA.pdf',sep=''), width = 12, height = 15)
+DotPlot(paired.combined, features = rev(markers.to.plot), cols = c("blue", "red"), dot.scale = 8, split.by = "group") + RotatedAxis()
+dev.off()
+
+markers.to.plot <- intersect(all_DEGs, sal)
+pdf(paste0(abbr,"_Dot/", abbr, '_Sal.pdf',sep=''), width = 12, height = 15)
+DotPlot(paired.combined, features = rev(markers.to.plot), cols = c("blue", "red"), dot.scale = 8, split.by = "group") + RotatedAxis()
+dev.off()
+
+markers.to.plot <- intersect(all_DEGs, ec)
+pdf(paste0(abbr,"_Dot/", abbr, '_ECs.pdf',sep=''), width = 12, height = 15)
+DotPlot(paired.combined, features = rev(markers.to.plot), cols = c("blue", "red"), dot.scale = 8, split.by = "group") + RotatedAxis()
+dev.off()
 
 
