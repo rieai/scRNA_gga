@@ -2,9 +2,11 @@ library(dplyr)
 library(tidyr)
 library(openai)
 library(Seurat)
+library(rstatix)
 library(ggplot2)
 library(cowplot)
 library(patchwork)
+library(tidyverse)
 library(GPTCelltype)
 library(org.Gg.eg.db)
 library(clusterProfiler)
@@ -16,14 +18,14 @@ set.seed(42)
 case <- 'Ovary W2'
 abbr <- 'OW2'
 org <- 'Ovary'
-setwd('/share/home/wangbaikui/scRNA_seq/huanglei/ovary/ow2')
+setwd('/share/hom/scRNA_seq/ovary/ow2')
 
-t1 <- Read10X(data.dir = "../../../01Cellranger_count_Results_2wks/01Count_Results_2wks/Ovary_R51_1_output/outs/filtered_feature_bc_matrix/")
-t2 <- Read10X(data.dir = "../../../01Cellranger_count_Results_2wks/01Count_Results_2wks/Ovary_R51_2_output/outs/filtered_feature_bc_matrix/")
-t3 <- Read10X(data.dir = "../../../01Cellranger_count_Results_2wks/01Count_Results_2wks/Ovary_R51_3_output/outs/filtered_feature_bc_matrix/")
-c1 <- Read10X(data.dir = "../../../01Cellranger_count_Results_2wks/01Count_Results_2wks/Ovary_PBS_1_output/outs/filtered_feature_bc_matrix/")
-c2 <- Read10X(data.dir = "../../../01Cellranger_count_Results_2wks/01Count_Results_2wks/Ovary_PBS_2_output/outs/filtered_feature_bc_matrix/")
-c3 <- Read10X(data.dir = "../../../01Cellranger_count_Results_2wks/01Count_Results_2wks/Ovary_PBS_3_output/outs/filtered_feature_bc_matrix/")
+t1 <- Read10X(data.dir = "../01Cellranger_count_Results_2wks/01Count_Results_2wks/Ovary_R51_1_output/outs/filtered_feature_bc_matrix/")
+t2 <- Read10X(data.dir = "../01Cellranger_count_Results_2wks/01Count_Results_2wks/Ovary_R51_2_output/outs/filtered_feature_bc_matrix/")
+t3 <- Read10X(data.dir = "../01Cellranger_count_Results_2wks/01Count_Results_2wks/Ovary_R51_3_output/outs/filtered_feature_bc_matrix/")
+c1 <- Read10X(data.dir = "../01Cellranger_count_Results_2wks/01Count_Results_2wks/Ovary_PBS_1_output/outs/filtered_feature_bc_matrix/")
+c2 <- Read10X(data.dir = "../01Cellranger_count_Results_2wks/01Count_Results_2wks/Ovary_PBS_2_output/outs/filtered_feature_bc_matrix/")
+c3 <- Read10X(data.dir = "../01Cellranger_count_Results_2wks/01Count_Results_2wks/Ovary_PBS_3_output/outs/filtered_feature_bc_matrix/")
 
 t1 <- CreateSeuratObject(counts = t1, project = paste(abbr,"R51 R1"), min.cells = 3, min.features = 200)
 t2 <- CreateSeuratObject(counts = t2, project = paste(abbr,"R51 R2"), min.cells = 3, min.features = 200)
@@ -145,6 +147,7 @@ print(res)
 
 #paired.combined <- readRDS(paste0('a_', abbr, '_object.rds'))
 #paired.markers <- readRDS(paste0('b_', abbr, '_markers.rds'))
+
 paired.markers$cluster <- as.character(paired.markers$cluster)
 
 # Top 20
@@ -153,18 +156,76 @@ top20_genes_per_cluster <- paired.markers %>%
         group_by(cluster) %>%
         top_n(n = 20, wt = avg_log2FC) %>%
         arrange(cluster, desc(avg_log2FC)) %>%
-        summarise(markers = paste(gene, collapse = ",")) %>%
+        summarise(markers = paste(gene, collapse = ";")) %>%
         ungroup()
 
-# Cell count
+# 提取meta信息
 meta <- paired.combined@meta.data
+
+# 每个样本中每个cluster的细胞数
 df_counts <- as.data.frame(table(meta$seurat_clusters, meta$sample))
 colnames(df_counts) <- c("cluster", "sample", "n_cells")
-df_cell_counts <- pivot_wider(df_counts, names_from = sample, values_from = n_cells, values_fill = 0)
-df_cell_counts$Cluster <- as.character(df_cell_counts$cluster)
-tsv <- left_join(top20_genes_per_cluster, df_cell_counts, by = "cluster")
 
-write.table(tsv, file = paste0(abbr, "_top20_markers.tsv"), sep = "\t", row.names = FALSE, col.names = TRUE, quote = FALSE)
+# 样本总细胞数（用于百分比计算）
+sample_totals <- df_counts %>%
+        group_by(sample) %>%
+        summarise(total_cells = sum(n_cells), .groups = "drop")
+
+# 计算每个cluster在每个样本的百分比
+df_pct <- df_counts %>%
+        left_join(sample_totals, by = "sample") %>%
+        mutate(pct = n_cells / total_cells * 100)
+
+# 添加实验组信息
+df_pct <- df_pct %>%
+        mutate(group = ifelse(grepl("R51", sample), "R51", "PBS"))
+
+p <- ggplot(df_pct, aes(x = group, y = pct, fill = group)) + geom_boxplot(outlier.shape = NA, alpha = 0.5) + geom_jitter(width = 0.1, size = 2) + scale_fill_manual(values = c("PBS" = "#1F4C98", "R51" = "#BB2A2D")) + facet_wrap(~ cluster, scales = "fixed") + ylim(0, max(df_pct$pct)*1.01) + labs(title= case, y = "Percentage of cells", x = "Group") + theme_bw()
+ggsave(paste0(abbr,"_cells.pdf"), p)
+
+# Wilcoxon 检验
+df_wilcox <- df_pct %>%
+        group_by(cluster) %>%
+        wilcox_test(pct ~ group) %>%
+        add_significance()
+
+# 效应量
+df_effsize <- df_pct %>%
+        group_by(cluster) %>%
+        wilcox_effsize(pct ~ group)
+
+# 中位数差值
+df_medians <- df_pct %>%
+        group_by(cluster, group) %>%
+        summarise(median_pct = median(pct), .groups = "drop") %>%
+        pivot_wider(names_from = group, values_from = median_pct) %>%
+        mutate(median_diff = R51 - PBS)
+
+# 合并统计结果
+df_wilcoxon <- df_wilcox %>%
+        select(cluster, p, p.signif) %>%
+        left_join(df_effsize %>% select(cluster, effsize), by = "cluster") %>%
+        left_join(df_medians, by = "cluster") %>%
+        select(cluster, p, effsize, median_diff, p.signif)
+
+df_wilcoxon$cluster <- as.character(df_wilcoxon$cluster)
+
+# 整合样本中的细胞计数和百分比，变成长表格
+df_counts_pct_wide <- df_pct %>%
+        select(cluster, sample, n_cells, pct) %>%
+        pivot_wider(
+        names_from = sample,
+        values_from = c(n_cells, pct),
+        values_fill = 0
+  )
+
+# 合并所有数据
+df_csv <- top20_genes_per_cluster %>%
+        left_join(df_wilcoxon, by = "cluster") %>%
+        left_join(df_counts_pct_wide, by = "cluster")
+
+# 输出文件
+write.csv(df_csv, paste0(abbr, "_cells_wilcoxon.csv"), row.names = FALSE, col.names = TRUE, quote = FALSE)
 
 if (!dir.exists(paste0(abbr,"_DEGs"))) {
         dir.create(paste0(abbr,"_DEGs"))
@@ -196,13 +257,14 @@ for (cluster_id in all_clusters) {
         # CSV
         if (!is.null(deg)) {
                 cluster_DEG_list[[cluster_id]] <- deg
-                write.csv(deg, file = paste0(abbr,"_DEGs/", abbr, "_DEGs_c", cluster_id, "_R51vsPBS.csv"))
+                write.csv(deg, file = paste0(abbr,"_DEGs/", abbr, "_DEGs_c", cluster_id, "_R51vsPBS.csv"), quote = FALSE)
         }
 }
 
 # Volcano
 for (cluster_id in names(cluster_DEG_list)) {
         df <- cluster_DEG_list[[cluster_id]]
+        df$tmp <- "NS"
         sig_genes <- df[df$p_val_adj < 0.05 & abs(df$avg_log2FC) >= 0.25,]
         up_genes <- sig_genes[sig_genes$avg_log2FC > 0.25, ]
         down_genes <- sig_genes[sig_genes$avg_log2FC < -0.25, ]
@@ -243,7 +305,7 @@ for (cluster_id in names(cluster_DEG_list)) {
         if (!is.null(kegg) && nrow(as.data.frame(kegg)) > 0) {
                 kegg_result_list[[cluster_id]] <- kegg
                 # Save as CSV
-                write.csv(as.data.frame(kegg), paste0(abbr, "_KEGG/", abbr, "_KEGG_c", cluster_id, ".csv"), row.names = FALSE)
+                write.csv(as.data.frame(kegg), paste0(abbr, "_KEGG/", abbr, "_KEGG_c", cluster_id, ".csv"), row.names = FALSE, quote = FALSE)
                 # DotPlot
                 pdf(paste0(abbr, "_KEGG/", abbr, "_KEGG_dot_c", cluster_id, ".pdf"))
                 print(dotplot(kegg, showCategory = 20) + ggtitle(paste("Cluster", cluster_id)))
@@ -281,17 +343,18 @@ p <- DotPlot(paired.combined, features = rev(markers.to.plot), cols = c("#BB2A2D
 p <- p + xlab("Toll-like receptor signaling pathway") + theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 10, face = "bold"), axis.text.y = element_text(size = 10, face = "bold"), legend.title = element_text(size = 10, face = "bold"), legend.text = element_text(size = 9), panel.grid = element_blank(), legend.position = "right")
 ggsave(paste0(abbr, "_Dot/a_", abbr, "_Toll.pdf"), plot = p, width = 12, height = 15, dpi = 1200)
 
-cells.use <- paired.combined@meta.data %>%
+cells50 <- paired.combined@meta.data %>%
         tibble::rownames_to_column("cell_id") %>%
         group_by(group_cluster) %>%
         sample_n(size = min(50, n()), replace = FALSE) %>%
         pull(cell_id)
-cell_heat <- subset(paired.combined, cells = cells.use)
+
+cells_heat <- subset(paired.combined, cells = cells50)
 
 # Heatmap
-p_heat <- DoHeatmap(cell_heat, features = markers.to.plot, group.by = "group_cluster", size = 7) + scale_fill_gradientn(colors = c("#1F4C98", "white", "#BB2A2D")) + theme(axis.text.x = element_text(size = 5)) + ggtitle("Toll-like receptor signaling pathway")
-
+p_heat <- DoHeatmap(cells_heat, features = markers.to.plot, group.by = "group_cluster", size = 7) + scale_fill_gradientn(colors = c("#1F4C98", "white", "#BB2A2D")) + theme(axis.text.x = element_text(size = 5)) + ggtitle("Toll-like receptor signaling pathway")
 ggsave(paste0(abbr,"_Dot/b_", abbr, "_Toll_Heat.pdf"), plot = p_heat, width = 20, height = 12, dpi = 1200)
+
 
 # Violin
 pdf(paste0(abbr,"_Dot/c_", abbr, "_Toll_vln.pdf"), width = 15, height = 5*length(markers.to.plot))
@@ -311,9 +374,8 @@ p <- p + xlab("NOD-like receptor signaling pathway") + theme(axis.text.x = eleme
 ggsave(paste0(abbr, "_Dot/a_", abbr, "_NOD.pdf"), plot = p, width = 12, height = 15, dpi = 1200)
 
 # Heatmap
-p_heat <- DoHeatmap(cell_heat, features = markers.to.plot, group.by = "group_cluster", size = 6) + scale_fill_gradientn(colors = c("#1F4C98", "white", "#BB2A2D")) + theme(axis.text.x = element_text(size = 4)) + ggtitle("NOD-like receptor signaling pathway")
+p_heat <- DoHeatmap(cells_heat, features = markers.to.plot, group.by = "group_cluster", size = 6) + scale_fill_gradientn(colors = c("#1F4C98", "white", "#BB2A2D")) + theme(axis.text.x = element_text(size = 5)) + ggtitle("NOD-like receptor signaling pathway")
 ggsave(paste0(abbr,"_Dot/b_", abbr, "_NOD_Heat.pdf"), plot = p_heat, width = 20, height = 12, dpi = 1200)
-
 
 # Violin
 pdf(paste0(abbr,"_Dot/c_", abbr, "_NOD_vln.pdf"), width = 15, height = 5*length(markers.to.plot))
@@ -333,10 +395,8 @@ p <- p + xlab("RIG-I-like receptor signaling pathway") + theme(axis.text.x = ele
 ggsave(paste0(abbr, "_Dot/a_", abbr, "_RIG.pdf"), plot = p, width = 12, height = 15, dpi = 1200)
 
 # Heatmap
-p_heat <- DoHeatmap(cell_heat, features = markers.to.plot, group.by = "group_cluster", size = 6) + scale_fill_gradientn(colors = c("#1F4C98", "white", "#BB2A2D")) + theme(axis.text.x = element_text(size = 4)) + ggtitle("RIG-I-like receptor signaling pathway")
-
+p_heat <- DoHeatmap(cells_heat, features = markers.to.plot, group.by = "group_cluster", size = 6) + scale_fill_gradientn(colors = c("#1F4C98", "white", "#BB2A2D")) + theme(axis.text.x = element_text(size = 5)) + ggtitle("RIG-I-like receptor signaling pathway")
 ggsave(paste0(abbr,"_Dot/b_", abbr, "_RIG_Heat.pdf"), plot = p_heat, width = 20, height = 12, dpi = 1200)
-
 
 # Violin
 pdf(paste0(abbr,"_Dot/c_", abbr, "_RIG_vln.pdf"), width = 15, height = 5*length(markers.to.plot))
@@ -356,8 +416,7 @@ p <- p + xlab("Cytosolic DNA-sensing pathway") + theme(axis.text.x = element_tex
 ggsave(paste0(abbr,"_Dot/a_", abbr, "_Cytosolic.pdf"), plot = p, width = 12, height = 15, dpi = 1200)
 
 # Heatmap
-p_heat <- DoHeatmap(cell_heat, features = markers.to.plot, group.by = "group_cluster", size = 6) + scale_fill_gradientn(colors = c("#1F4C98", "white", "#BB2A2D")) + theme(axis.text.x = element_text(size = 4)) + ggtitle("Cytosolic DNA-sensing pathway")
-
+p_heat <- DoHeatmap(cells_heat, features = markers.to.plot, group.by = "group_cluster", size = 6) + scale_fill_gradientn(colors = c("#1F4C98", "white", "#BB2A2D")) + theme(axis.text.x = element_text(size = 5)) + ggtitle("Cytosolic DNA-sensing pathway")
 ggsave(paste0(abbr,"_Dot/b_", abbr, "_Cytosolic_Heat.pdf"), plot = p_heat, width = 20, height = 12, dpi = 1200)
 
 # Violin
@@ -378,7 +437,7 @@ p <- p + xlab("C-type lectin receptor signaling pathway") + theme(axis.text.x = 
 ggsave(paste0(abbr,"_Dot/a_", abbr, "_Lectin.pdf"), plot = p, width = 12, height = 15, dpi = 1200)
 
 # Heatmap
-p_heat <- DoHeatmap(cell_heat, features = markers.to.plot, group.by = "group_cluster", size = 6) + scale_fill_gradientn(colors = c("#1F4C98", "white", "#BB2A2D")) + theme(axis.text.x = element_text(size = 4)) + ggtitle("C-type lectin receptor signaling pathway")
+p_heat <- DoHeatmap(cells_heat, features = markers.to.plot, group.by = "group_cluster", size = 6) + scale_fill_gradientn(colors = c("#1F4C98", "white", "#BB2A2D")) + theme(axis.text.x = element_text(size = 5)) + ggtitle("C-type lectin receptor signaling pathway")
 ggsave(paste0(abbr,"_Dot/b_", abbr, "_Lectin_Heat.pdf"), plot = p_heat, width = 20, height = 12, dpi = 1200)
 
 # Violin
@@ -399,7 +458,7 @@ p <- p + xlab("Intestinal immune network for IgA production") + theme(axis.text.
 ggsave(paste0(abbr,"_Dot/a_", abbr, "_IGA.pdf"), plot = p, width = 12, height = 15, dpi = 1200)
 
 # Heatmap
-p_heat <- DoHeatmap(cell_heat, features = markers.to.plot, group.by = "group_cluster", size = 6) + scale_fill_gradientn(colors = c("#1F4C98", "white", "#BB2A2D")) + theme(axis.text.x = element_text(size = 4)) + ggtitle("Intestinal immune network for IgA production")
+p_heat <- DoHeatmap(cells_heat, features = markers.to.plot, group.by = "group_cluster", size = 6) + scale_fill_gradientn(colors = c("#1F4C98", "white", "#BB2A2D")) + theme(axis.text.x = element_text(size = 5)) + ggtitle("Intestinal immune network for IgA production")
 ggsave(paste0(abbr,"_Dot/b_", abbr, "_IGA_Heat.pdf"), plot = p_heat, width = 20, height = 12, dpi = 1200)
 
 # Violin
@@ -420,8 +479,9 @@ p <- p + xlab("Salmonella infection") + theme(axis.text.x = element_text(angle =
 ggsave(paste0(abbr,"_Dot/a_", abbr, "_Sal.pdf"), plot = p, width = 12, height = 15, dpi = 1200)
 
 # Heatmap
-p_heat <- DoHeatmap(cell_heat, features = markers.to.plot, group.by = "group_cluster", size = 6) + scale_fill_gradientn(colors = c("#1F4C98", "white", "#BB2A2D")) + theme(axis.text.x = element_text(size = 4)) + ggtitle("Salmonella infection")
+p_heat <- DoHeatmap(cells_heat, features = markers.to.plot, group.by = "group_cluster", size = 6) + scale_fill_gradientn(colors = c("#1F4C98", "white", "#BB2A2D"))  + theme(axis.text.x = element_text(size = 5)) + ggtitle("Salmonella infection")
 ggsave(paste0(abbr,"_Dot/b_", abbr, "_Sal_Heat.pdf"), plot = p_heat, width = 20, height = 12, dpi = 1200)
+
 
 # Violin
 pdf(paste0(abbr,"_Dot/c_", abbr, "_Sal_vln.pdf"), width = 15, height = 5*length(markers.to.plot))
@@ -441,7 +501,8 @@ p <- p + xlab("Bacterial invasion of epithelial cells") + theme(axis.text.x = el
 ggsave(paste0(abbr,"_Dot/a_", abbr, "_ECs.pdf"), plot = p, width = 12, height = 15, dpi = 1200)
 
 # Heatmap
-p_heat <- DoHeatmap(cell_heat, features = markers.to.plot, group.by = "group_cluster", size = 6) + scale_fill_gradientn(colors = c("#1F4C98", "white", "#BB2A2D")) + theme(axis.text.x = element_text(size = 4)) + ggtitle("Bacterial invasion of epithelial cells")
+p_heat <- DoHeatmap(cells_heat, features = markers.to.plot, group.by = "group_cluster", size = 6) + scale_fill_gradientn(colors = c("#1F4C98", "white", "#BB2A2D")) + theme(axis.text.x = element_text(size = 5)) + ggtitle("Bacterial invasion of epithelial cells")
+
 ggsave(paste0(abbr,"_Dot/b_", abbr, "_ECs_Heat.pdf"), plot = p_heat, width = 20, height = 12, dpi = 1200)
 
 # Violin
@@ -453,3 +514,4 @@ dev.off()
 # Feature
 pdf(paste0(abbr,"_Dot/d_", abbr, "_ECs_feature.pdf"), width = 20, height = 5*length(markers.to.plot))
 FeaturePlot(paired.combined, features = markers.to.plot, split.by = "group", cols = c("grey","red"), reduction = "umap", min.cutoff = "q9") + xlab("UMAP 1") + ylab("UMAP 2") + theme(axis.title = element_text(size = 18), legend.text = element_text(size = 18)) + guides(colour = guide_legend(override.aes = list(size = 10)))
+
