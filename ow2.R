@@ -15,17 +15,17 @@ library(EnhancedVolcano)
 Sys.setenv(OPENAI_API_KEY = '')
 set.seed(42)
 
-case <- 'Ovary W2'
-abbr <- 'OW2'
-org <- 'Ovary'
-setwd('/share/hom/scRNA_seq/ovary/ow2')
+case <- 'Spleen W2'
+abbr <- 'SW2'
+org <- 'Spleen'
+setwd('/share/home/wangbaikui/scRNA_seq/huanglei/spleen/sw2')
 
-t1 <- Read10X(data.dir = "../01Cellranger_count_Results_2wks/01Count_Results_2wks/Ovary_R51_1_output/outs/filtered_feature_bc_matrix/")
-t2 <- Read10X(data.dir = "../01Cellranger_count_Results_2wks/01Count_Results_2wks/Ovary_R51_2_output/outs/filtered_feature_bc_matrix/")
-t3 <- Read10X(data.dir = "../01Cellranger_count_Results_2wks/01Count_Results_2wks/Ovary_R51_3_output/outs/filtered_feature_bc_matrix/")
-c1 <- Read10X(data.dir = "../01Cellranger_count_Results_2wks/01Count_Results_2wks/Ovary_PBS_1_output/outs/filtered_feature_bc_matrix/")
-c2 <- Read10X(data.dir = "../01Cellranger_count_Results_2wks/01Count_Results_2wks/Ovary_PBS_2_output/outs/filtered_feature_bc_matrix/")
-c3 <- Read10X(data.dir = "../01Cellranger_count_Results_2wks/01Count_Results_2wks/Ovary_PBS_3_output/outs/filtered_feature_bc_matrix/")
+t1 <- Read10X(data.dir = "../../../01Cellranger_count_Results_2wks/01Count_Results_2wks/Spleen_R51_1_output/outs/filtered_feature_bc_matrix/")
+t2 <- Read10X(data.dir = "../../../01Cellranger_count_Results_2wks/01Count_Results_2wks/Spleen_R51_2_output/outs/filtered_feature_bc_matrix/")
+t3 <- Read10X(data.dir = "../../../01Cellranger_count_Results_2wks/01Count_Results_2wks/Spleen_R51_3_output/outs/filtered_feature_bc_matrix/")
+c1 <- Read10X(data.dir = "../../../01Cellranger_count_Results_2wks/01Count_Results_2wks/Spleen_PBS_1_output/outs/filtered_feature_bc_matrix/")
+c2 <- Read10X(data.dir = "../../../01Cellranger_count_Results_2wks/01Count_Results_2wks/Spleen_PBS_2_output/outs/filtered_feature_bc_matrix/")
+c3 <- Read10X(data.dir = "../../../01Cellranger_count_Results_2wks/01Count_Results_2wks/Spleen_PBS_3_output/outs/filtered_feature_bc_matrix/")
 
 t1 <- CreateSeuratObject(counts = t1, project = paste(abbr,"R51 R1"), min.cells = 3, min.features = 200)
 t2 <- CreateSeuratObject(counts = t2, project = paste(abbr,"R51 R2"), min.cells = 3, min.features = 200)
@@ -145,9 +145,6 @@ write.csv(paired.markers, file = paste0(abbr,'_genes_exp.csv'))
 res <- gptcelltype(paired.markers, tissuename = paste('Chicken',org), model = 'gpt-4')
 print(res)
 
-#paired.combined <- readRDS(paste0('a_', abbr, '_object.rds'))
-#paired.markers <- readRDS(paste0('b_', abbr, '_markers.rds'))
-
 paired.markers$cluster <- as.character(paired.markers$cluster)
 
 # Top 20
@@ -227,6 +224,8 @@ df_csv <- top20_genes_per_cluster %>%
 # 输出文件
 write.csv(df_csv, paste0(abbr, "_cells_wilcoxon.csv"), row.names = FALSE, col.names = TRUE, quote = FALSE)
 
+
+
 if (!dir.exists(paste0(abbr,"_DEGs"))) {
         dir.create(paste0(abbr,"_DEGs"))
 }
@@ -238,6 +237,10 @@ if (!dir.exists(paste0(abbr,"_Volcano"))) {
 if (!dir.exists(paste0(abbr,"_KEGG"))) {
         dir.create(paste0(abbr,"_KEGG"))
 }
+
+# 24,229d
+#paired.combined <- readRDS(paste0('a_', abbr, '_object.rds'))
+#paired.markers <- readRDS(paste0('b_', abbr, '_markers.rds'))
 
 # DEGs
 all_clusters <- levels(Idents(paired.combined))
@@ -257,14 +260,13 @@ for (cluster_id in all_clusters) {
         # CSV
         if (!is.null(deg)) {
                 cluster_DEG_list[[cluster_id]] <- deg
-                write.csv(deg, file = paste0(abbr,"_DEGs/", abbr, "_DEGs_c", cluster_id, "_R51vsPBS.csv"), quote = FALSE)
+                #write.csv(deg, file = paste0(abbr,"_DEGs/", abbr, "_DEGs_c", cluster_id, "_R51vsPBS.csv"), quote = FALSE)
         }
 }
 
 # Volcano
 for (cluster_id in names(cluster_DEG_list)) {
         df <- cluster_DEG_list[[cluster_id]]
-        df$tmp <- "NS"
         sig_genes <- df[df$p_val_adj < 0.05 & abs(df$avg_log2FC) >= 0.25,]
         up_genes <- sig_genes[sig_genes$avg_log2FC > 0.25, ]
         down_genes <- sig_genes[sig_genes$avg_log2FC < -0.25, ]
@@ -280,35 +282,51 @@ for (cluster_id in names(cluster_DEG_list)) {
 gga_kegg_local <- read.table("../../kegg/gga_kegg_term2gene.tsv", header = TRUE, sep = "\t", stringsAsFactors = FALSE)
 term2gene <- gga_kegg_local[, c("pathway", "gene")]
 term2name <- read.csv("../../kegg/gga_kegg_term2name.csv", stringsAsFactors = FALSE)
-kegg_result_list <- list()
 
 all_DEGs <- c()
 for (cluster_id in names(cluster_DEG_list)) {
         deg <- cluster_DEG_list[[cluster_id]]
         # Filter out DEGs
         deg_filtered <- deg %>% filter(p_val_adj < 0.05 & abs(avg_log2FC) > 0.25)
+        deg_up <- deg_filtered %>% filter(avg_log2FC > 0.25)
+        deg_down <- deg_filtered %>% filter(avg_log2FC < -0.25)
+        write.csv(deg_up, file = paste0(abbr,"_DEGs/", abbr, "_DEGs_c", cluster_id, "_R51vsPBS_UP.csv"), quote = FALSE)
+        write.csv(deg_down, file = paste0(abbr,"_DEGs/", abbr, "_DEGs_c", cluster_id, "_R51vsPBS_DOWN.csv"), quote = FALSE)
+
+        cat(cluster_id, "Total Genes:", nrow(deg), "\tDEGs:", nrow(deg_filtered), "\tUp:", nrow(deg_up), "\tDown:", nrow(deg_down), "\n")
+
         all_DEGs <- c(all_DEGs, rownames(deg_filtered))
         # Transfer symbol -> ENTREZ ID
-        gene_df <- bitr(rownames(deg_filtered), fromType = "SYMBOL", toType = "ENTREZID", OrgDb = org.Gg.eg.db)
-        gene_df <- gene_df[!duplicated(gene_df$ENTREZID) & !is.na(gene_df$ENTREZID), ]
+        gene_up <- bitr(rownames(deg_up), fromType = "SYMBOL", toType = "ENTREZID", OrgDb = org.Gg.eg.db)
+        gene_up <- gene_up[!duplicated(gene_up$ENTREZID) & !is.na(gene_up$ENTREZID), ]
+
+        gene_down <- bitr(rownames(deg_down), fromType = "SYMBOL", toType = "ENTREZID", OrgDb = org.Gg.eg.db)
+        gene_down <- gene_down[!duplicated(gene_down$ENTREZID) & !is.na(gene_down$ENTREZID), ]
+
         # KEGG
         cat("DEGs nrow: cluster", cluster_id, "\n")
-        print(nrow(gene_df))
-        if (nrow(gene_df) == 0) {
-                cat("No valid ENTREZ IDs for cluster", cluster_id, "\n")
-                next
-        }
-
-        kegg <- enricher(gene = gene_df$ENTREZID, pAdjustMethod = "BH", pvalueCutoff = 0.05, qvalueCutoff = 0.2, TERM2GENE = term2gene, TERM2NAME = term2name)
+        kegg_up <- enricher(gene = gene_up$ENTREZID, pAdjustMethod = "BH", pvalueCutoff = 0.05, qvalueCutoff = 0.2, TERM2GENE = term2gene, TERM2NAME = term2name)
+        kegg_down <- enricher(gene = gene_down$ENTREZID, pAdjustMethod = "BH", pvalueCutoff = 0.05, qvalueCutoff = 0.2, TERM2GENE = term2gene, TERM2NAME = term2name)
 
         cat("KEGG nrow: cluster", cluster_id, "\n")
-        if (!is.null(kegg) && nrow(as.data.frame(kegg)) > 0) {
-                kegg_result_list[[cluster_id]] <- kegg
+        if ((!is.null(kegg_up) && nrow(as.data.frame(kegg_up)) > 0) || (!is.null(kegg_down) && nrow(as.data.frame(kegg_down)) > 0)) {
                 # Save as CSV
-                write.csv(as.data.frame(kegg), paste0(abbr, "_KEGG/", abbr, "_KEGG_c", cluster_id, ".csv"), row.names = FALSE, quote = FALSE)
-                # DotPlot
                 pdf(paste0(abbr, "_KEGG/", abbr, "_KEGG_dot_c", cluster_id, ".pdf"))
-                print(dotplot(kegg, showCategory = 20) + ggtitle(paste("Cluster", cluster_id)))
+                tryCatch({
+                        write.csv(as.data.frame(kegg_up), paste0(abbr, "_KEGG/", abbr, "_KEGG_c", cluster_id, "_up.csv"), row.names = FALSE, quote = FALSE)
+                        # DotPlot
+                        print(dotplot(kegg_up, showCategory = 20) + ggtitle(paste0(case, ": Cluster ", cluster_id, 'KEGG UP')))
+                        log(paste0(case, ": Cluster ", cluster_id, 'KEGG UP'))
+                }, error = function(e) {
+                        cat(paste0(case, ": Cluster ", cluster_id, 'KEGG UP FAILED'), e$message, "\n")
+                })
+                tryCatch({
+                        write.csv(as.data.frame(kegg_down), paste0(abbr, "_KEGG/", abbr, "_KEGG_c", cluster_id, "_down.csv"), row.names = FALSE, quote = FALSE)
+                        print(dotplot(kegg_down, showCategory = 20) + ggtitle(paste0(case, ": Cluster ", cluster_id, 'KEGG DOWN')))
+                        log(paste0(case, ": Cluster ", cluster_id, 'KEGG DOWN'))
+                }, error = function(e) {
+                        cat(paste0(case, ": Cluster ", cluster_id, 'KEGG DOWN FAILED'), e$message, "\n")
+                })
                 dev.off()
         } else {
                 cat("No enrichment result for cluster", cluster_id, "\n")
@@ -355,10 +373,16 @@ cells_heat <- subset(paired.combined, cells = cells50)
 p_heat <- DoHeatmap(cells_heat, features = markers.to.plot, group.by = "group_cluster", size = 7) + scale_fill_gradientn(colors = c("#1F4C98", "white", "#BB2A2D")) + theme(axis.text.x = element_text(size = 5)) + ggtitle("Toll-like receptor signaling pathway")
 ggsave(paste0(abbr,"_Dot/b_", abbr, "_Toll_Heat.pdf"), plot = p_heat, width = 20, height = 12, dpi = 1200)
 
+vln_colors <- c("#1F4C9B", "#BB2A2D")
+names(vln_colors) <- c(paste0(abbr, " PBS"), paste0(abbr, " R51"))
 
 # Violin
 pdf(paste0(abbr,"_Dot/c_", abbr, "_Toll_vln.pdf"), width = 15, height = 5*length(markers.to.plot))
 plots <- VlnPlot(paired.combined, features = markers.to.plot, split.by = "group", pt.size = 0, combine = FALSE)
+plots <- lapply(plots, function(plot) {
+        plot + scale_fill_manual(values = vln_colors)
+})
+
 wrap_plots(plots = plots, ncol = 1)
 dev.off()
 
@@ -380,6 +404,10 @@ ggsave(paste0(abbr,"_Dot/b_", abbr, "_NOD_Heat.pdf"), plot = p_heat, width = 20,
 # Violin
 pdf(paste0(abbr,"_Dot/c_", abbr, "_NOD_vln.pdf"), width = 15, height = 5*length(markers.to.plot))
 plots <- VlnPlot(paired.combined, features = markers.to.plot, split.by = "group", pt.size = 0, combine = FALSE)
+plots <- lapply(plots, function(plot) {
+        plot + scale_fill_manual(values = vln_colors)
+})
+
 wrap_plots(plots = plots, ncol = 1)
 dev.off()
 
@@ -401,6 +429,10 @@ ggsave(paste0(abbr,"_Dot/b_", abbr, "_RIG_Heat.pdf"), plot = p_heat, width = 20,
 # Violin
 pdf(paste0(abbr,"_Dot/c_", abbr, "_RIG_vln.pdf"), width = 15, height = 5*length(markers.to.plot))
 plots <- VlnPlot(paired.combined, features = markers.to.plot, split.by = "group", pt.size = 0, combine = FALSE)
+plots <- lapply(plots, function(plot) {
+        plot + scale_fill_manual(values = vln_colors)
+})
+
 wrap_plots(plots = plots, ncol = 1)
 dev.off()
 
@@ -422,6 +454,10 @@ ggsave(paste0(abbr,"_Dot/b_", abbr, "_Cytosolic_Heat.pdf"), plot = p_heat, width
 # Violin
 pdf(paste0(abbr,"_Dot/c_", abbr, "_Cytosolic_vln.pdf"), width = 15, height = 5*length(markers.to.plot))
 plots <- VlnPlot(paired.combined, features = markers.to.plot, split.by = "group", pt.size = 0, combine = FALSE)
+plots <- lapply(plots, function(plot) {
+        plot + scale_fill_manual(values = vln_colors)
+})
+
 wrap_plots(plots = plots, ncol = 1)
 dev.off()
 
@@ -443,6 +479,10 @@ ggsave(paste0(abbr,"_Dot/b_", abbr, "_Lectin_Heat.pdf"), plot = p_heat, width = 
 # Violin
 pdf(paste0(abbr,"_Dot/c_", abbr, "_Lectin_vln.pdf"), width = 15, height = 5*length(markers.to.plot))
 plots <- VlnPlot(paired.combined, features = markers.to.plot, split.by = "group", pt.size = 0, combine = FALSE)
+plots <- lapply(plots, function(plot) {
+        plot + scale_fill_manual(values = vln_colors)
+})
+
 wrap_plots(plots = plots, ncol = 1)
 dev.off()
 
@@ -464,6 +504,10 @@ ggsave(paste0(abbr,"_Dot/b_", abbr, "_IGA_Heat.pdf"), plot = p_heat, width = 20,
 # Violin
 pdf(paste0(abbr,"_Dot/c_", abbr, "_IGA_vln.pdf"), width = 15, height = 5*length(markers.to.plot))
 plots <- VlnPlot(paired.combined, features = markers.to.plot, split.by = "group", pt.size = 0, combine = FALSE)
+plots <- lapply(plots, function(plot) {
+        plot + scale_fill_manual(values = vln_colors)
+})
+
 wrap_plots(plots = plots, ncol = 1)
 dev.off()
 
@@ -486,6 +530,10 @@ ggsave(paste0(abbr,"_Dot/b_", abbr, "_Sal_Heat.pdf"), plot = p_heat, width = 20,
 # Violin
 pdf(paste0(abbr,"_Dot/c_", abbr, "_Sal_vln.pdf"), width = 15, height = 5*length(markers.to.plot))
 plots <- VlnPlot(paired.combined, features = markers.to.plot, split.by = "group", pt.size = 0, combine = FALSE)
+plots <- lapply(plots, function(plot) {
+        plot + scale_fill_manual(values = vln_colors)
+})
+
 wrap_plots(plots = plots, ncol = 1)
 dev.off()
 
@@ -508,10 +556,13 @@ ggsave(paste0(abbr,"_Dot/b_", abbr, "_ECs_Heat.pdf"), plot = p_heat, width = 20,
 # Violin
 pdf(paste0(abbr,"_Dot/c_", abbr, "_ECs_vln.pdf"), width = 15, height = 5*length(markers.to.plot))
 plots <- VlnPlot(paired.combined, features = markers.to.plot, split.by = "group", pt.size = 0, combine = FALSE)
+plots <- lapply(plots, function(plot) {
+        plot + scale_fill_manual(values = vln_colors)
+})
+
 wrap_plots(plots = plots, ncol = 1)
 dev.off()
 
 # Feature
 pdf(paste0(abbr,"_Dot/d_", abbr, "_ECs_feature.pdf"), width = 20, height = 5*length(markers.to.plot))
 FeaturePlot(paired.combined, features = markers.to.plot, split.by = "group", cols = c("grey","red"), reduction = "umap", min.cutoff = "q9") + xlab("UMAP 1") + ylab("UMAP 2") + theme(axis.title = element_text(size = 18), legend.text = element_text(size = 18)) + guides(colour = guide_legend(override.aes = list(size = 10)))
-
